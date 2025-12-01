@@ -4,29 +4,145 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>Socket.IO chat</title>
   <style>
-      body { margin: 0; padding-bottom: 3rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      /* 新增/修改：现代化界面 CSS */
+      :root {
+          --primary-color: #007bff; /* 蓝色 */
+          --system-color: #888;
+          --bg-color: #f8f9fa; /* 浅灰色背景 */
+          --input-bg: #fff;
+          --chat-bg: #fff;
+          --shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      }
+      body { 
+          margin: 0; 
+          padding-bottom: 3.5rem; 
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+          background: var(--bg-color);
+          color: #333;
+      }
+      
+      /* 新增：头部横幅 */
+      #header {
+          background: var(--primary-color);
+          color: #fff;
+          padding: 0.5rem 1rem;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 2.5rem;
+          box-shadow: var(--shadow);
+          z-index: 10;
+      }
 
-      #form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
-      #input { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
-      #input:focus { outline: none; }
-      #form > button { background: #333; border: none; padding: 0 1rem; margin: 0.25rem; border-radius: 3px; outline: none; color: #fff; }
+      #alias-banner { font-weight: 600; }
+      #user-count-display { font-size: 0.9em; opacity: 0.9; }
 
-      #messages { list-style-type: none; margin: 0; padding: 0; }
-      #messages > li { padding: 0.5rem 1rem; }
-      #messages > li:nth-child(odd) { background: #efefef; }
+      #form { 
+          background: var(--input-bg); 
+          padding: 0.25rem; 
+          position: fixed; 
+          bottom: 0; 
+          left: 0; 
+          right: 0; 
+          display: flex; 
+          height: 3rem; 
+          box-sizing: border-box; 
+          box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+          z-index: 10;
+      }
+      #input { 
+          border: 1px solid #ccc;
+          padding: 0 1rem; 
+          flex-grow: 1; 
+          border-radius: 1.5rem; 
+          margin: 0.25rem;
+          font-size: 1rem;
+          transition: border-color 0.3s;
+      }
+      #input:focus { 
+          outline: none; 
+          border-color: var(--primary-color);
+      }
+      #form > button { 
+          background: var(--primary-color); 
+          border: none; 
+          padding: 0 1rem; 
+          margin: 0.25rem; 
+          border-radius: 1.5rem; 
+          outline: none; 
+          color: #fff; 
+          font-weight: bold;
+          cursor: pointer;
+          transition: background-color 0.3s;
+      }
+      #form > button:hover {
+          background-color: #0056b3;
+      }
 
-      #alias-banner { background: #222; color: #fff; padding: 0.5rem 1rem; }
+      #messages { 
+          list-style-type: none; 
+          margin: 0; 
+          padding: 4rem 0.5rem 0; /* 为固定头部留出空间 */
+          background: var(--chat-bg);
+      }
+      #messages > li { 
+          padding: 0.5rem 1rem; 
+          /* 移除原有的背景交替色 */
+          /* #messages > li:nth-child(odd) { background: #efefef; } */
+      }
+      
+      /* 聊天气泡样式 */
+      .message-alias {
+          display: block;
+          font-size: 0.8em;
+          font-weight: bold;
+          margin-bottom: 2px;
+      }
+      
+      .message-content {
+          background: #e9e9eb; /* 浅灰色气泡背景 */
+          padding: 8px 12px;
+          border-radius: 18px;
+          display: inline-block;
+          max-width: 80%;
+          word-wrap: break-word;
+      }
+
+      /* 系统消息样式 (加入/离开通知) */
+      .system-message {
+          text-align: center;
+          font-style: italic;
+          color: var(--system-color);
+          font-size: 0.9em;
+          margin: 0.5rem 0;
+      }
+      
+      .system-message .message-content {
+          background: #e0e0e0;
+          font-size: 0.9em;
+      }
   </style>
 </head>
 <body>
-  <div id="alias-banner">正在为你分配马甲…</div>
+  <div id="header">
+      <div id="alias-banner">正在为你分配马甲…</div>
+      <div id="user-count-display">在线人数: 0</div>
+  </div>
+  
   <ul id="messages"></ul>
+  
   <form id="form" action="">
-    <input id="input" autocomplete="off" /><button>Send</button>
+    <input id="input" autocomplete="off" placeholder="输入消息..." /><button>发送</button>
   </form>
+  
   <script src="/socket.io/socket.io.js"></script>
   <script>
     let counter = 0;
+    // let myColor = '#333'; // 客户端不再需要存储自己的颜色，只需在 alias assigned 中接收即可
 
     const socket = io({
       auth: {
@@ -40,25 +156,66 @@
     const input = document.getElementById('input');
     const messages = document.getElementById('messages');
     const aliasBanner = document.getElementById('alias-banner');
+    const userCountDisplay = document.getElementById('user-count-display'); // 新增元素
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       if (input.value) {
         const clientOffset = `${socket.id}-${counter++}`;
-        socket.emit('chat message', input.value, clientOffset);
+        socket.emit('chat message', input.value, clientOffset, () => {
+            // Callback for successful acknowledgment (optional)
+        });
         input.value = '';
       }
     });
 
-    socket.on('alias assigned', (alias) => {
-      aliasBanner.textContent = `你的马甲：${alias}`;
+    // 修改：接收包含 alias 和 color 的对象
+    socket.on('alias assigned', (data) => {
+      aliasBanner.textContent = `你的马甲：${data.alias}`;
+      // myColor = data.color; // 可选：如果需要客户端区分自己的消息，可以存储
     });
 
-    socket.on('chat message', (msg, serverOffset) => {
+    // 新增：处理在线人数更新
+    socket.on('user count', (count) => {
+        userCountDisplay.textContent = `在线人数: ${count}`;
+    });
+
+    // 新增：处理系统消息 (用户加入/离开)
+    socket.on('server message', (msg) => {
       const item = document.createElement('li');
-      item.textContent = msg;
+      item.classList.add('system-message');
+      
+      const contentSpan = document.createElement('span');
+      contentSpan.classList.add('message-content');
+      contentSpan.textContent = msg;
+      
+      item.appendChild(contentSpan);
       messages.appendChild(item);
       window.scrollTo(0, document.body.scrollHeight);
+    });
+
+    // 修改：处理结构化消息 payload
+    socket.on('chat message', (payload, serverOffset) => {
+      // payload 结构: { alias: string, content: string, color: string }
+      const item = document.createElement('li');
+      
+      // 1. 马甲 (应用颜色)
+      const aliasSpan = document.createElement('span');
+      aliasSpan.classList.add('message-alias');
+      aliasSpan.textContent = payload.alias;
+      aliasSpan.style.color = payload.color; // 应用颜色
+      item.appendChild(aliasSpan);
+      
+      // 2. 消息内容 (气泡样式)
+      const contentSpan = document.createElement('span');
+      contentSpan.classList.add('message-content');
+      contentSpan.textContent = payload.content;
+      item.appendChild(contentSpan);
+      
+      messages.appendChild(item);
+      window.scrollTo(0, document.body.scrollHeight);
+      
+      // 更新 offset for recovery
       socket.auth.serverOffset = serverOffset;
     });
   </script>
