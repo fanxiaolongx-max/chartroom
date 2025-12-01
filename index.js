@@ -42,6 +42,16 @@ const generateAlias = () => {
   return `${adjective}${noun}-${suffix}`;
 };
 
+// 新增：随机颜色生成函数
+const generateColor = () => {
+  const letters = '0123456789ABCDEF';
+  let color = '#';
+  for (let i = 0; i < 6; i++) {
+    color += letters[Math.floor(Math.random() * 16)];
+  }
+  return color;
+};
+
 if (cluster.isPrimary) {
   const numCPUs = availableParallelism();
   for (let i = 0; i < numCPUs; i++) {
@@ -80,14 +90,37 @@ if (cluster.isPrimary) {
 
   io.on('connection', async (socket) => {
     const alias = generateAlias();
+    const color = generateColor(); // 新增：生成颜色
     socket.data.alias = alias;
-    socket.emit('alias assigned', alias);
+    socket.data.color = color; // 存储颜色
+
+    // 发送马甲和颜色给当前连接的客户端
+    socket.emit('alias assigned', { alias, color });
+
+    // 广播：用户加入通知
+    const userConnectedMsg = `${alias} 加入了聊天室`;
+    io.emit('server message', userConnectedMsg);
+    
+    // 广播：更新在线人数
+    io.emit('user count', io.engine.clientsCount);
 
     socket.on('chat message', async (msg, clientOffset, callback) => {
-      const payload = `${socket.data.alias}: ${msg}`;
+      const alias = socket.data.alias;
+      const color = socket.data.color;
+      
+      // 客户端接收的结构化消息
+      const payload = {
+          alias: alias,
+          content: msg,
+          color: color
+      };
+      
+      // 数据库存储仍使用简单字符串格式
+      const dbContent = `${alias}: ${msg}`;
+      
       let result;
       try {
-        result = await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', payload, clientOffset);
+        result = await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', dbContent, clientOffset);
       } catch (e) {
         if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
           callback();
@@ -96,8 +129,23 @@ if (cluster.isPrimary) {
         }
         return;
       }
+      
+      // 广播结构化消息
       io.emit('chat message', payload, result.lastID);
       callback();
+    });
+
+    socket.on('disconnect', () => {
+        const alias = socket.data.alias;
+        
+        // 广播：用户离开通知
+        const userDisconnectedMsg = `${alias} 离开了聊天室`;
+        io.emit('server message', userDisconnectedMsg);
+        
+        // 广播：更新在线人数 (使用 setTimeout 确保 clientsCount 更新)
+        setTimeout(() => {
+             io.emit('user count', io.engine.clientsCount);
+        }, 50);
     });
 
     if (!socket.recovered) {
@@ -105,7 +153,14 @@ if (cluster.isPrimary) {
         await db.each('SELECT id, content FROM messages WHERE id > ?',
           [socket.handshake.auth.serverOffset || 0],
           (_err, row) => {
-            socket.emit('chat message', row.content, row.id);
+            // 恢复逻辑：解析旧格式消息，并赋予默认颜色
+            const parts = row.content.match(/(.+?): (.+)/);
+            const recoveryPayload = {
+                alias: parts ? parts[1] : '系统',
+                content: parts ? parts[2] : row.content,
+                color: '#888888' // 默认颜色用于历史消息
+            };
+            socket.emit('chat message', recoveryPayload, row.id);
           }
         )
       } catch (e) {
