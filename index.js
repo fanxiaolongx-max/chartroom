@@ -13,7 +13,7 @@ if (cluster.isPrimary) {
   const numCPUs = availableParallelism();
   for (let i = 0; i < numCPUs; i++) {
     cluster.fork({
-      PORT: 3000 + i
+      PORT: 4000 + i
     });
   }
 
