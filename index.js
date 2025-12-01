@@ -9,6 +9,39 @@ import { availableParallelism } from 'node:os';
 import cluster from 'node:cluster';
 import { createAdapter, setupPrimary } from '@socket.io/cluster-adapter';
 
+const ALIAS_ADJECTIVES = [
+  '活力',
+  '神秘',
+  '勇敢',
+  '快乐',
+  '冷静',
+  '机智',
+  '可爱',
+  '闪亮',
+  '顽皮',
+  '轻快'
+];
+
+const ALIAS_NOUNS = [
+  '狐狸',
+  '鲸鱼',
+  '猫头鹰',
+  '野猫',
+  '海豚',
+  '蜻蜓',
+  '斑马',
+  '麋鹿',
+  '飞鸟',
+  '纸飞机'
+];
+
+const generateAlias = () => {
+  const adjective = ALIAS_ADJECTIVES[Math.floor(Math.random() * ALIAS_ADJECTIVES.length)];
+  const noun = ALIAS_NOUNS[Math.floor(Math.random() * ALIAS_NOUNS.length)];
+  const suffix = Math.floor(Math.random() * 900 + 100); // three digits
+  return `${adjective}${noun}-${suffix}`;
+};
+
 if (cluster.isPrimary) {
   const numCPUs = availableParallelism();
   for (let i = 0; i < numCPUs; i++) {
@@ -46,10 +79,15 @@ if (cluster.isPrimary) {
   });
 
   io.on('connection', async (socket) => {
+    const alias = generateAlias();
+    socket.data.alias = alias;
+    socket.emit('alias assigned', alias);
+
     socket.on('chat message', async (msg, clientOffset, callback) => {
+      const payload = `${socket.data.alias}: ${msg}`;
       let result;
       try {
-        result = await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg, clientOffset);
+        result = await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', payload, clientOffset);
       } catch (e) {
         if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
           callback();
@@ -58,7 +96,7 @@ if (cluster.isPrimary) {
         }
         return;
       }
-      io.emit('chat message', msg, result.lastID);
+      io.emit('chat message', payload, result.lastID);
       callback();
     });
 

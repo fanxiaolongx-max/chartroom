@@ -14,9 +14,12 @@
       #messages { list-style-type: none; margin: 0; padding: 0; }
       #messages > li { padding: 0.5rem 1rem; }
       #messages > li:nth-child(odd) { background: #efefef; }
+
+      #alias-banner { background: #222; color: #fff; padding: 0.5rem 1rem; }
   </style>
 </head>
 <body>
+  <div id="alias-banner">正在为你分配马甲…</div>
   <ul id="messages"></ul>
   <form id="form" action="">
     <input id="input" autocomplete="off" /><button>Send</button>
@@ -36,6 +39,7 @@
     const form = document.getElementById('form');
     const input = document.getElementById('input');
     const messages = document.getElementById('messages');
+    const aliasBanner = document.getElementById('alias-banner');
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -44,6 +48,10 @@
         socket.emit('chat message', input.value, clientOffset);
         input.value = '';
       }
+    });
+
+    socket.on('alias assigned', (alias) => {
+      aliasBanner.textContent = `你的马甲：${alias}`;
     });
 
     socket.on('chat message', (msg, serverOffset) => {
