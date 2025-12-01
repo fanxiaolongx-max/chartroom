@@ -100,14 +100,38 @@ if (cluster.isPrimary) {
       callback();
     });
 
-    if (!socket.recovered) {
+    const sendRows = (rows, eventName = 'chat message') => {
+      rows.forEach((row) => socket.emit(eventName, row.content, row.id));
+    };
+
+    socket.on('load history', async (earliestId = Number.MAX_SAFE_INTEGER, callback) => {
       try {
-        await db.each('SELECT id, content FROM messages WHERE id > ?',
-          [socket.handshake.auth.serverOffset || 0],
-          (_err, row) => {
-            socket.emit('chat message', row.content, row.id);
-          }
-        )
+        const rows = await db.all(
+          'SELECT id, content FROM messages WHERE id < ? ORDER BY id DESC LIMIT 10',
+          earliestId
+        );
+        sendRows(rows.reverse(), 'chat message prepend');
+        callback?.(rows.length);
+      } catch (e) {
+        callback?.(0);
+      }
+    });
+
+    if (!socket.recovered) {
+      const offset = socket.handshake.auth.serverOffset || 0;
+      try {
+        if (offset === 0) {
+          const rows = await db.all(
+            'SELECT id, content FROM messages ORDER BY id DESC LIMIT 10'
+          );
+          sendRows(rows.reverse());
+        } else {
+          const rows = await db.all(
+            'SELECT id, content FROM messages WHERE id > ? ORDER BY id ASC',
+            offset
+          );
+          sendRows(rows);
+        }
       } catch (e) {
         // something went wrong
       }
