@@ -14,9 +14,15 @@
       #messages { list-style-type: none; margin: 0; padding: 0; }
       #messages > li { padding: 0.5rem 1rem; }
       #messages > li:nth-child(odd) { background: #efefef; }
+
+      #alias-banner { background: #222; color: #fff; padding: 0.5rem 1rem; }
+
+      .message-body { display: flex; gap: 0.5rem; align-items: flex-start; }
+      .quote-button { font-size: 0.8rem; padding: 0.2rem 0.6rem; cursor: pointer; }
   </style>
 </head>
 <body>
+  <div id="alias-banner">正在为你分配马甲…</div>
   <ul id="messages"></ul>
   <form id="form" action="">
     <input id="input" autocomplete="off" /><button>Send</button>
@@ -36,6 +42,10 @@
     const form = document.getElementById('form');
     const input = document.getElementById('input');
     const messages = document.getElementById('messages');
+    const aliasBanner = document.getElementById('alias-banner');
+    let earliestMessageId = null;
+    let loadingHistory = false;
+    let historyExhausted = false;
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -46,12 +56,73 @@
       }
     });
 
-    socket.on('chat message', (msg, serverOffset) => {
+    socket.on('alias assigned', (alias) => {
+      aliasBanner.textContent = `你的马甲：${alias}`;
+    });
+
+    const createMessageElement = (msg) => {
       const item = document.createElement('li');
-      item.textContent = msg;
-      messages.appendChild(item);
-      window.scrollTo(0, document.body.scrollHeight);
-      socket.auth.serverOffset = serverOffset;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'message-body';
+      const textSpan = document.createElement('span');
+      textSpan.textContent = msg;
+      const quoteButton = document.createElement('button');
+      quoteButton.type = 'button';
+      quoteButton.className = 'quote-button';
+      quoteButton.textContent = '引用';
+      quoteButton.addEventListener('click', () => {
+        input.value = `> ${msg}\n`;
+        input.focus();
+      });
+      wrapper.appendChild(textSpan);
+      wrapper.appendChild(quoteButton);
+      item.appendChild(wrapper);
+      return item;
+    };
+
+    const appendMessage = (msg, serverOffset, toEnd = true) => {
+      const item = createMessageElement(msg);
+      if (toEnd) {
+        messages.appendChild(item);
+        window.scrollTo(0, document.body.scrollHeight);
+      } else {
+        const currentScrollHeight = document.body.scrollHeight;
+        messages.insertBefore(item, messages.firstChild);
+        const newScrollHeight = document.body.scrollHeight;
+        window.scrollTo(0, window.scrollY + (newScrollHeight - currentScrollHeight));
+      }
+      if (typeof serverOffset === 'number') {
+        socket.auth.serverOffset = Math.max(socket.auth.serverOffset || 0, serverOffset);
+        earliestMessageId = earliestMessageId === null ? serverOffset : Math.min(earliestMessageId, serverOffset);
+      }
+    };
+
+    socket.on('chat message', (msg, serverOffset) => {
+      appendMessage(msg, serverOffset, true);
+    });
+
+    socket.on('chat message prepend', (msg, serverOffset) => {
+      appendMessage(msg, serverOffset, false);
+    });
+
+    const loadMoreHistory = () => {
+      if (loadingHistory || historyExhausted || earliestMessageId === null) return;
+      loadingHistory = true;
+      const previousScrollHeight = document.body.scrollHeight;
+      socket.emit('load history', earliestMessageId, (count) => {
+        if (count === 0) {
+          historyExhausted = true;
+        }
+        const newScrollHeight = document.body.scrollHeight;
+        window.scrollTo(0, window.scrollY + (newScrollHeight - previousScrollHeight));
+        loadingHistory = false;
+      });
+    };
+
+    window.addEventListener('scroll', () => {
+      if (window.scrollY < 50) {
+        loadMoreHistory();
+      }
     });
   </script>
 </body>
